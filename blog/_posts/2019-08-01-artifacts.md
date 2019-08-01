@@ -114,7 +114,7 @@ products = [
 ]
 ```
 
-With such products defined, the jll package will contain `data_txt`, `libdataproc` and `mungify_exe` symbols exported. For `FileProduct` variables, the exported value is a string pointing to the location of the file on-disk.  For `LibraryProduct` variables, it is a string corresponding to the `SONAME` of the desired library (it will have already been `dlopen()`'ed during the `__init__()` method of the jll package module so typical `ccall()` usage applies), and for `ExecutableProduct` variables, the exported value is a function that can be called to set appropriate environment variables.  Example:
+With such products defined, the jll package will contain `data_txt`, `libdataproc` and `mungify_exe` symbols exported. For `FileProduct` variables, the exported value is a string pointing to the location of the file on-disk.  For `LibraryProduct` variables, it is a string corresponding to the `SONAME` of the desired library (it will have already been `dlopen()`'ed during the `__init__()` method of the jll package module so typical `ccall()` usage applies), and for `ExecutableProduct` variables, the exported value is a function that can be called to set appropriate environment variables such as `PATH` and `LD_LIBRARY_PATH`.  This is necessary so that nested depdenencies works properly, e.g. `ffmpeg` calling the `x264` binary during video encoding.  Example:
 
 ```julia
 using c_simple_jll
