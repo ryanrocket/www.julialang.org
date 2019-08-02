@@ -10,7 +10,7 @@ Over the past few months, we have been iterating on and refining a design for `P
 
 # Pkg Artifacts
 
-Pkg artifacts, as outlined in [`Pkg.jl#1234`](https://github.com/JuliaLang/Pkg.jl/issues/1234), provides a convenient way to associate containers of data with Julia projects and packages.  Artifacts are referred to by content-hash, or optionally by a name that is bound to a hash through an `Artifact.toml` file.  An example `Artifact.toml` file is shown here as an example:
+Pkg artifacts, as outlined in [`Pkg.jl#1234`](https://github.com/JuliaLang/Pkg.jl/issues/1234), provides a convenient way to associate containers of data with Julia projects and packages.  Artifacts are referred to by content-hash, or optionally by a name that is bound to a hash through an `Artifacts.toml` file.  An example `Artifacts.toml` file is shown here as an example:
 
 ```TOML
 [socrates]
@@ -48,7 +48,7 @@ os = "macos"
 git-tree-sha1 = "1c223e66f1a8e0fae1f9fcb9d3f2e3ce48a82200"
 ```
 
-This `Artifact.toml` binds three artifacts; one named `socrates`, one named `c_simple` and one named `processed_output`.  The single required piece of information for an artifact is its `git-tree-sha1`.  Because artifacts are addressed only by their content hash, the purpose of an `Artifact.toml` file is to provide metadata about these artifacts, such as binding a human-readable name to an appropriate content hash, providing information about where an artifact may be downloaded from, or even binding a single name to multiple hashes, keyed by platform-specific constraints such as operating system or libgfortran version.
+This `Artifacts.toml` binds three artifacts; one named `socrates`, one named `c_simple` and one named `processed_output`.  The single required piece of information for an artifact is its `git-tree-sha1`.  Because artifacts are addressed only by their content hash, the purpose of an `Artifacts.toml` file is to provide metadata about these artifacts, such as binding a human-readable name to an appropriate content hash, providing information about where an artifact may be downloaded from, or even binding a single name to multiple hashes, keyed by platform-specific constraints such as operating system or libgfortran version.
 
 ## Artifact types and properties
 
@@ -60,15 +60,15 @@ The `processed_output` artifact contains no `download` stanza, and so cannot be 
 
 ## Working with artifacts
 
-Artifacts can be manipulated using convenient APIs exposed from the `Pkg.Artifacts` namespace.  As a motivating example, let us imagine that we are writing a package that needs to load the [Iris machine learning dataset](https://archive.ics.uci.edu/ml/datasets/iris). While we could just download the dataset during a build step into the package directory, and many packages currently do precisely this, that has some significant drawbacks. First, it modifies the package directory, making package installation stateful, which we'd like to avoid. In the future, we would like to reach the point where packages can be installed completely read-only, instead of being able to modify themselves after installation. Second, the downloaded data is not shared across different versions of our package. If we have three different versions of the package installed for use by various projects, then we need three different copies of the data, even if it hasn't changed between those versions. Moreover, each time we upgrade or downgrade the package, unless we do something clever (and probably brittle), we will have to download the data again.  With artifacts, we will instead check to see if our `iris` artifact already exists on-disk and only if it doesn't will we download and install it, after which we can bind the result into our `Artifact.toml` file:
+Artifacts can be manipulated using convenient APIs exposed from the `Pkg.Artifacts` namespace.  As a motivating example, let us imagine that we are writing a package that needs to load the [Iris machine learning dataset](https://archive.ics.uci.edu/ml/datasets/iris). While we could just download the dataset during a build step into the package directory, and many packages currently do precisely this, that has some significant drawbacks. First, it modifies the package directory, making package installation stateful, which we'd like to avoid. In the future, we would like to reach the point where packages can be installed completely read-only, instead of being able to modify themselves after installation. Second, the downloaded data is not shared across different versions of our package. If we have three different versions of the package installed for use by various projects, then we need three different copies of the data, even if it hasn't changed between those versions. Moreover, each time we upgrade or downgrade the package, unless we do something clever (and probably brittle), we will have to download the data again.  With artifacts, we will instead check to see if our `iris` artifact already exists on-disk and only if it doesn't will we download and install it, after which we can bind the result into our `Artifacts.toml` file:
 
 ```julia
 using Pkg.Artifacts
 
-# This is the path to the Artifact.toml we will manipulate
-artifact_toml = joinpath(@__DIR__, "Artifact.toml")
+# This is the path to the Artifacts.toml we will manipulate
+artifact_toml = joinpath(@__DIR__, "Artifacts.toml")
 
-# Query the `Artifact.toml` file for the hash bound to the name "iris"
+# Query the `Artifacts.toml` file for the hash bound to the name "iris"
 # (returns `nothing` if no such binding exists)
 iris_hash = artifact_hash("iris", artifact_toml)
 
@@ -83,7 +83,7 @@ if iris_hash == nothing || !artifact_exists(iris_hash)
         download("$(iris_url_base)/iris.names", joinpath(artifact_dir, "iris.names"))
     end
 
-    # Now bind that hash within our `Artifact.toml`.  `force = true` means that if it already exists,
+    # Now bind that hash within our `Artifacts.toml`.  `force = true` means that if it already exists,
     # just overwrite with the new content-hash.  Unless the source files change, we do not expect
     # the content hash to change, so this should not cause unnecessary version control churn.
     bind_artifact("iris", iris_hash, artifact_toml)
@@ -94,15 +94,15 @@ end
 iris_dataset_path = artifact_path(iris_hash)
 ```
 
-For the specific use case of using artifacts that were previously bound, we have the shorthand notation `artifact"name"` which will automatically search for the `Artifact.toml` file contained within the current package, look up the given artifact by name, install it if it is not yet installed, then return the path to that given artifact.
+For the specific use case of using artifacts that were previously bound, we have the shorthand notation `artifact"name"` which will automatically search for the `Artifacts.toml` file contained within the current package, look up the given artifact by name, install it if it is not yet installed, then return the path to that given artifact.
 
 # BinaryBuilder.jl
 
-You may be able to guess that `BinaryBuilder.jl` knows how to generate `Artifact.toml` files ([example](https://github.com/JuliaBinaryWrappers/c_simple_jll.jl/blob/master/Artifact.toml)), but that's not the only change.  We were tired of the current best practice of needing to manually express the graph of all dependencies within your package's `deps/build.jl` file.  To date, there has not been a simple, concise method of recursively installing your binary dependencies, users have been forced to resort to strategies such as embedding the `build.jl` files of all binary dependencies within their own packages.  This works, but it's way clunkier than we'd like.  Luckily, we already have a package manager that knows how to deal with recursive dependencies, and so a simple solution was devised; as a part of the output of a `BinaryBuilder.jl` run, we will generate a wrapper julia package that will simultaneously allow us to express the DAG of binary dependencies, as well as provide boilerplate julia wrapper code that will make dealing with libraries and executables much simpler.  We refer to these autogenerated packages as "jll" packages.
+You may be able to guess that `BinaryBuilder.jl` knows how to generate `Artifacts.toml` files ([example](https://github.com/JuliaBinaryWrappers/c_simple_jll.jl/blob/master/Artifacts.toml)), but that's not the only change.  We were tired of the current best practice of needing to manually express the graph of all dependencies within your package's `deps/build.jl` file.  To date, there has not been a simple, concise method of recursively installing your binary dependencies, users have been forced to resort to strategies such as embedding the `build.jl` files of all binary dependencies within their own packages.  This works, but it's way clunkier than we'd like.  Luckily, we already have a package manager that knows how to deal with recursive dependencies, and so a simple solution was devised; as a part of the output of a `BinaryBuilder.jl` run, we will generate a wrapper julia package that will simultaneously allow us to express the DAG of binary dependencies, as well as provide boilerplate julia wrapper code that will make dealing with libraries and executables much simpler.  We refer to these autogenerated packages as "jll" packages.
 
 ## Julia library (jll) packages
 
-Autogenerated BinaryBulider-produced packages are normal Julia packages, with the notable inclusion of `Artifact.toml` files that download the appropriate version of whatever binary artifacts were built by `BinaryBuilder` and uploaded to the repository's GitHub release. We refer to these autogenerated packages as "Julia library packages" or "jll"s for short.  BinaryBuilder attempts to upload all packages to `JuliaBinaryWrappers/$(package_name)_jll.jl`, however this is, of course, configurable.  An example package [is given here](https://github.com/JuliaBinaryWrappers/c_simple_jll.jl), the most interesting part being the new API that is exposed by these autogenerated packages.
+Autogenerated BinaryBulider-produced packages are normal Julia packages, with the notable inclusion of `Artifacts.toml` files that download the appropriate version of whatever binary artifacts were built by `BinaryBuilder` and uploaded to the repository's GitHub release. We refer to these autogenerated packages as "Julia library packages" or "jll"s for short.  BinaryBuilder attempts to upload all packages to `JuliaBinaryWrappers/$(package_name)_jll.jl`, however this is, of course, configurable.  An example package [is given here](https://github.com/JuliaBinaryWrappers/c_simple_jll.jl), the most interesting part being the new API that is exposed by these autogenerated packages.
 
 The code bindings within jll packages are autogenerated from the `Products` defined within the `build_tarballs.jl` file that generates the package.  For example purposes, we will assume that the following products were defined:
 
@@ -167,7 +167,7 @@ dependencies = [
 ]
 ```
 
-Because jll packages are registered just like any other public package, installing these build dependencies is as simple as querying the registry, cloning the latest version of the jll package, inspecting its `Artifact.toml` file and unpacking the appropriate artifact within the build prefix.  Even better, these build dependencies are automatically recorded as dependencies for the generated new jll package.
+Because jll packages are registered just like any other public package, installing these build dependencies is as simple as querying the registry, cloning the latest version of the jll package, inspecting its `Artifacts.toml` file and unpacking the appropriate artifact within the build prefix.  Even better, these build dependencies are automatically recorded as dependencies for the generated new jll package.
 
 # Updating your packages
 
